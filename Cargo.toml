@@ -1,0 +1,36 @@
+[package]
+name = "cosmic-altswitcher"
+version = "0.1.0"
+edition = "2024"
+description = "Windows-style thumbnail alt-tab switcher for COSMIC desktop"
+license = "GPL-3.0-only"
+
+[dependencies]
+anyhow = "1.0"
+calloop = { version = "0.14", features = ["executor"] }
+calloop-wayland-source = "0.4"
+smithay-client-toolkit = "0.19"
+clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"
+futures = "0.3"
+libcosmic = { git = "https://github.com/pop-os/libcosmic", default-features = false, features = [
+    "tokio",
+    "wayland",
+    "single-instance",
+    "multi-window",
+    "winit",
+    "wgpu",
+] }
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+zbus = "5.13"
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = 3
+lto = "thin"

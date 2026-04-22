@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=com.github.jibsta210.CosmicAltSwitcher
+Exec=/usr/local/bin/cosmic-altswitcher

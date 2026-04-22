@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Cosmic Alt-Tab Switcher
+Comment=Window switcher with thumbnail strip
+Type=Application
+Exec=cosmic-altswitcher
+Terminal=false
+Categories=COSMIC;
+Icon=com.system76.CosmicLauncher
+NoDisplay=true
+StartupNotify=true
+X-HostWaylandDisplay=true
+DBusActivatable=true
