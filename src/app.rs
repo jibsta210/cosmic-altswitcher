@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use crate::backend::{self, ExtForeignToplevelHandleV1, ToplevelInfo};
+use cosmic::cctk::cosmic_protocols::toplevel_info::v1::client::zcosmic_toplevel_handle_v1::State as ToplevelState;
 use clap::Parser;
 use cosmic::{
     app::{Application, Core, CosmicFlags, Settings, Task},
@@ -92,7 +93,10 @@ struct App {
     visible: bool,
     fade_phase: FadePhase,
     fade_start: Option<std::time::Instant>,
-    pending_close: Option<window::Id>, // destroy this surface after fade-out completes
+    pending_close: Option<window::Id>,
+    /// MRU (most recently used) order: front = most recent, back = least recent.
+    /// Updated whenever a toplevel becomes activated.
+    mru_order: Vec<ExtForeignToplevelHandleV1>,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
@@ -138,6 +142,7 @@ impl Application for App {
             fade_phase: FadePhase::Idle,
             fade_start: None,
             pending_close: None,
+            mru_order: Vec::new(),
         };
         // If launched with a subcommand (first invocation case), immediately show.
         // The Next/Prev cycle happens once we have windows enumerated.
@@ -198,6 +203,15 @@ impl Application for App {
                 self.alt_was_held = true;
                 self.fade_phase = FadePhase::FadingIn;
                 self.fade_start = Some(std::time::Instant::now());
+                // Sort windows by MRU order (most recent first).
+                let mru = self.mru_order.clone();
+                self.windows.sort_by_key(|w| {
+                    mru.iter()
+                        .position(|h| h == &w.handle)
+                        .unwrap_or(usize::MAX)
+                });
+                // Default selection = previous window (index 1), Windows-style.
+                self.selected = if self.windows.len() >= 2 { 1 } else { 0 };
                 // Request fresh captures for all windows — screenshots may be stale.
                 if let Some(tx) = &self.cmd_sender {
                     for w in &self.windows {
@@ -280,29 +294,47 @@ impl Application for App {
                     self.cmd_sender = Some(tx);
                 }
                 backend::Event::NewToplevel(handle, info) => {
+                    let was_active = info.state.contains(&ToplevelState::Activated);
                     self.windows.push(Window {
-                        handle,
+                        handle: handle.clone(),
                         info,
                         thumbnail: None,
                     });
-                    if self.windows.len() > 1 && self.selected == 0 {
-                        self.selected = 1;
+                    // New windows enter MRU at the back (least recent), but
+                    // already-active windows go to the front.
+                    self.mru_order.retain(|h| h != &handle);
+                    if was_active {
+                        self.mru_order.insert(0, handle);
+                    } else {
+                        self.mru_order.push(handle);
                     }
                 }
                 backend::Event::ToplevelCapture(handle, pixels, w, h) => {
                     if let Some(win) = self.windows.iter_mut().find(|win| win.handle == handle) {
-                        // iced expects an owned Vec<u8>; unwrap Arc or clone
                         let bytes = Arc::try_unwrap(pixels).unwrap_or_else(|a| (*a).clone());
                         win.thumbnail = Some(widget::image::Handle::from_rgba(w, h, bytes));
                     }
                 }
                 backend::Event::UpdateToplevel(handle, info) => {
+                    let was_active = self
+                        .windows
+                        .iter()
+                        .find(|w| w.handle == handle)
+                        .map(|w| w.info.state.contains(&ToplevelState::Activated))
+                        .unwrap_or(false);
+                    let now_active = info.state.contains(&ToplevelState::Activated);
                     if let Some(w) = self.windows.iter_mut().find(|w| w.handle == handle) {
                         w.info = info;
+                    }
+                    // Track activation transition: not-active → active means MRU update
+                    if !was_active && now_active {
+                        self.mru_order.retain(|h| h != &handle);
+                        self.mru_order.insert(0, handle);
                     }
                 }
                 backend::Event::CloseToplevel(handle) => {
                     self.windows.retain(|w| w.handle != handle);
+                    self.mru_order.retain(|h| h != &handle);
                     if self.selected >= self.windows.len() && !self.windows.is_empty() {
                         self.selected = self.windows.len() - 1;
                     }
